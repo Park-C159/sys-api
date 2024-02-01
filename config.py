@@ -1,4 +1,4 @@
-SQLALCHEMY_DATABASE_URI = 'mysql://root:123456@172.17.0.1:3307/sysplus' # 默认数据库（主数据库）
+SQLALCHEMY_DATABASE_URI = 'mysql://root:123456@127.0.0.1:3307/sysplus' # 默认数据库（主数据库）
 
 # 需要绑定的多个数据库
 SQLALCHEMY_BINDS = {
