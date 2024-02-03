@@ -60,6 +60,7 @@ class Data(db.Model):
             'window_switch': self.window_switch
         }
 
+
 class FittingData(db.Model):
     __tablename__ = 'fitting_data'  # 根据实际表名调整
 
@@ -127,6 +128,7 @@ class User(db.Model):
 
         }
 
+
 class MonitorParam(db.Model):
     __bind_key__ = 'param'  # 已设置__bind_key__ 数据库名
     __tablename__ = 'tb_monitor_param'  # 表名
@@ -189,6 +191,7 @@ class MonitorParam(db.Model):
             "air_pressure": self.air_pressure
         }
 
+
 class Warn(db.Model):
     # 使用默认数据库，不需要像下面指定__bind_key__
     __tablename__ = 'warning'  # 表名
@@ -205,26 +208,29 @@ class Warn(db.Model):
 
         }
 
+
 class Manage(db.Model):
     # 使用默认数据库，不需要像下面指定__bind_key__
     __tablename__ = 'manage'  # 表名
 
     mid = db.Column(db.Integer, primary_key=True)
-    mname = db.Column(db.String(100))
     mtime = db.Column(db.DateTime)
     mdose = db.Column(db.String(100))
     mclass = db.Column(db.Integer)
+    minfo = db.Column(db.String)
 
     def jsonformat(self):
         return {
             "mid": self.mid,
-            "mname": self.mname,
+            "minfo": self.minfo,
             "mdose": self.mdose,
             "mtime": self.mtime,
             "mclass": self.mclass
         }
 
+
 from datetime import datetime, timedelta
+
 
 def generate_table_names(start_date, end_date):
     # 解析输入日期
@@ -241,46 +247,9 @@ def generate_table_names(start_date, end_date):
 
     return table_names
 
+
 from sqlalchemy.sql import text
-@app.route('/', methods=['GET'])
-def run():
-    start_date = "2023-03-01"
-    end_date = "2023-03-31"
-    table_names = generate_table_names(start_date, end_date)
-    # print(table_names)
-    # table_names = ['fitting202331', 'fitting202332']  # 指定的表名列表
-    union_query = " UNION ".join([f"SELECT * FROM {name}" for name in table_names])
 
-    # 使用 db.engines 获取与特定绑定相关的引擎
-    db2_engine = db.engines['db2']
-    
-    with db2_engine.connect() as connection:
-        executable_query = text(union_query)
-        result_proxy = connection.execute(executable_query)
-        columns = result_proxy.keys()  # 获取列名
-        data = [dict(zip(columns, row)) for row in result_proxy]
-
-         # 将数据插入到主数据库
-    for row in data:
-        # 合并date和time字段为datetime
-        date_str = row['date']
-        time_str = row['time']
-        
-        # 修改日期时间字符串的格式
-        datetime_str = f"{date_str.replace('/', '-')} {time_str}"
-        
-        # 解析为datetime
-        row['datetime'] = datetime.strptime(datetime_str, "%Y-%m-%d %H:%M:%S")
-
-        # 移除原始的date和time字段
-        del row['date']
-        del row['time']
-
-        new_entry = FittingData(**row)  # 创建模型实例，假设字段匹配
-        db.session.add(new_entry)
-    db.session.commit()
-
-    return jsonify(data)
 
 def query_to_dict(query_result):
     if not query_result:
@@ -299,39 +268,85 @@ def query_to_dict(query_result):
 
     return data_dict
 
+
 @app.route('/data', methods=['GET', 'POST'])
 def data():
     if request.method == "GET":
-        # result = FittingData.query.all()
-        result = FittingData.query.order_by(desc(FittingData.datetime)).all()
-        data = []
-        for row in result:
-            data.append(row.jsonformat())
+        result = FittingData.query.order_by(asc(FittingData.datetime)).all()
+        # data = [row.jsonformat() for row in result]
+
+        step = 60
+        needNum = 23
+        start = max(0, len(result) - needNum * step - 1)
+        sliced_data = result[start::step]
         res = {
             "code": 200,
             "msg": "OK",
-            "data": data
+            "data": query_to_dict(sliced_data)
         }
+
         return res
-    elif request.method =="POST":
+    elif request.method == "POST":
         params = request.json
 
         start_time = params.get("start")
         end_time = params.get("end")
 
-        result = FittingData.query.filter(and_(FittingData.datetime >= start_time, FittingData.datetime <= end_time)).order_by(asc(FittingData.datetime)).all()
-        data = []
-        for row in result:
-            data.append(row.jsonformat())
+        result = FittingData.query.filter(
+            and_(FittingData.datetime >= start_time, FittingData.datetime <= end_time)).order_by(
+            asc(FittingData.datetime)).all()
+
         res = {
-            "code":200,
-            "msg":"请求成功！",
-            "data":query_to_dict(result)
+            "code": 200,
+            "msg": "请求成功！",
+            "data": query_to_dict(result)
         }
 
         return res
-    
-    return {"code":400,"msg":"无效的参数"}
+
+    return {"code": 400, "msg": "无效的参数"}
+
+
+@app.route('/', methods=['GET'])
+def run():
+    start_date = "2023-03-01"
+    end_date = "2023-03-31"
+    table_names = generate_table_names(start_date, end_date)
+    # print(table_names)
+    # table_names = ['fitting202331', 'fitting202332']  # 指定的表名列表
+    union_query = " UNION ".join([f"SELECT * FROM {name}" for name in table_names])
+
+    # 使用 db.engines 获取与特定绑定相关的引擎
+    db2_engine = db.engines['db2']
+
+    with db2_engine.connect() as connection:
+        executable_query = text(union_query)
+        result_proxy = connection.execute(executable_query)
+        columns = result_proxy.keys()  # 获取列名
+        data = [dict(zip(columns, row)) for row in result_proxy]
+
+        # 将数据插入到主数据库
+    for row in data:
+        # 合并date和time字段为datetime
+        date_str = row['date']
+        time_str = row['time']
+
+        # 修改日期时间字符串的格式
+        datetime_str = f"{date_str.replace('/', '-')} {time_str}"
+
+        # 解析为datetime
+        row['datetime'] = datetime.strptime(datetime_str, "%Y-%m-%d %H:%M:%S")
+
+        # 移除原始的date和time字段
+        del row['date']
+        del row['time']
+
+        new_entry = FittingData(**row)  # 创建模型实例，假设字段匹配
+        db.session.add(new_entry)
+    db.session.commit()
+
+    return jsonify(data)
+
 
 @app.route('/mod', methods=['GET', 'POST'])
 def mod():
@@ -346,7 +361,6 @@ def mod():
 
         for row in u:
             data.append(row.regist())
-        print(len(data))
         if len(data) == 0:
             res = {
                 'code': 300,
@@ -373,6 +387,7 @@ def mod():
         res = "get/resgist"
     return make_response(res)
 
+
 @app.route('/regist', methods=['GET', 'POST'])
 def reg():
     if request.method == 'POST':
@@ -389,21 +404,18 @@ def reg():
             jiao = i.items() & r.items()
             for j in jiao:
                 if (j[0] == 'uname'):
-                    print('uname')
                     res = {
                         'code': 300,
                         'msg': "用户名已经被占用"
                     }
                     break
                 elif (j[0] == 'uidcard'):
-                    print('uidcard')
                     res = {
                         'code': 300,
                         'msg': "身份证已经被使用"
                     }
                     break
                 elif (j[0] == 'uphone'):
-                    print('uphone')
                     res = {
                         'code': 300,
                         'msg': "电话已经被占用"
@@ -432,6 +444,7 @@ def reg():
         res = "get/resgist"
     return make_response(res)
 
+
 @app.route('/find', methods=['GET', 'POST'])
 def find():
     if request.method == 'POST':
@@ -444,7 +457,6 @@ def find():
             data = []
             for row in u:
                 data.append(row.jsonformat())
-            print(data[0])
             res = {
                 'code': 200,
                 'msg': "注册成功！",
@@ -461,7 +473,6 @@ def find():
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     if request.method == 'POST':
-        print(request)
         res = {}
         r = request.json
 
@@ -471,7 +482,6 @@ def login():
 
         for row in u:
             data.append(row.jsonformat())
-        print(data)
         # sql1 = "select * from users where uname = '" + r.get("uname") + "' and  upwd = '" + r.get("upwd") + "';"
 
         # data = sqlutl.sqlGet(db, sql1)
@@ -503,9 +513,6 @@ def environment():
             MonitorParam.create_time.desc()).limit(1).all()
         # result = MonitorParam.query.filter(MonitorParam.monitor_no == "8dfeaf752b4d40b4a23819478c90f9ae").limit(1).all()
 
-        # print(result)
-        # result = db.session.query.all()
-        # print(result)
         data = []
         for row in result:
             data.append(row.jsonformat())
@@ -516,7 +523,6 @@ def environment():
         }
     except:
         res = errObj
-    # print(data)
 
     return res
 
@@ -615,17 +621,84 @@ def warning():
 
 
 @app.route('/manage', methods=['GET', 'POST'])
-def manage():
-    result = Manage.query.order_by(Manage.mid.desc()).all()
-    data = []
-    for row in result:
-        data.append(row.jsonformat())
+@app.route('/manage/<int:id>', methods=["PUT", "DELETE"])
+def manage(id=None):
+    if request.method == "GET":
+        result = Manage.query.order_by(Manage.mid.desc()).all()
+        data = []
+        mclass_mapping = {1: "施肥", 2: "浇水", 3: "喷药", 4: "其他"}  # 定义分类映射
 
-    res = {
-        "code": 200,
-        "msg": "OK",
-        "data": data
-    }
+        for row in result:
+            row_data = row.jsonformat()  # 假设这已经是一个字典了
+
+            # 格式化mtime字段
+            if 'mtime' in row_data and isinstance(row_data['mtime'], datetime):
+                row_data['mtime'] = row_data['mtime'].strftime('%y-%m-%d %H:%M:%S')
+
+            # 转换mclass字段
+            if 'mclass' in row_data:
+                # 使用get方法从映射中获取分类名称，默认为"其他"
+                row_data['mclass'] = mclass_mapping.get(row_data['mclass'], "其他")
+
+            data.append(row_data)
+
+        res = {
+            "code": 200,
+            "msg": "OK",
+            "data": data
+        }
+    elif request.method == "POST":
+        params = request.json
+        # 确保这里使用的字段与Manage模型匹配
+        new_manage = Manage(
+            mclass=params['mclass'],
+            mtime=datetime.strptime(params['mtime'], '%Y-%m-%d %H:%M:%S'),  # 注意年份格式应为大写的Y，代表四位数的年份
+            mdose=params.get('dose', ''),
+            minfo=params.get('info', '')
+        )
+        db.session.add(new_manage)
+        db.session.commit()
+        res = jsonify({"code": 200, "msg": "创建成功", "data": new_manage.jsonformat()}), 201
+
+    elif request.method == "PUT":
+        if not id:
+            res = {
+                "code": 400,
+                "msg": "需要指定ID"
+            }
+            return res
+        manage = Manage.query.filter_by(mid=id).first()
+        if not manage:
+            res = {
+                "code": 404,
+                "msg": "资源未找到"
+            }
+            return res
+        data = request.json
+        manage.mtime = datetime.strptime(data['mtime'], '%Y-%m-%d %H:%M:%S') if 'mtime' in data else manage.mtime
+        manage.mclass = data.get("class", manage.mclass)
+        manage.mdose = data.get("dose", manage.mdose)
+        manage.minfo = data.get("info", manage.minfo)
+        db.session.commit()
+        res = {
+            "code": 200,
+            "msg": "更新成功",
+            "data": manage.jsonformat()
+        }
+    elif request.method == "DELETE":
+        if not id:
+            return {"code": 400, "msg": "需要指定ID"}
+        manage = Manage.query.filter_by(mid=id).first()
+        if not manage:
+            return {"code": 404, "msg": "资源未找到"}
+        db.session.delete(manage)
+        db.session.commit()
+        res = {"code": 200, "msg": "删除成功"}
+    else:
+        res = {
+            "code": 405,
+            "msg": "方法不允许"
+        }
 
     return res
 
@@ -666,7 +739,6 @@ def deleteManage():
         else:
             try:
                 m_del = Manage.query.filter(Manage.mid == mid).first()
-                print(m_del)
                 db.session.delete(m_del)
                 db.session.commit()
                 db.session.close()
@@ -690,9 +762,11 @@ def queryInfo():
         start = r.get("start")
         end = r.get("end")
 
-        result = MonitorParam.query.filter(and_(MonitorParam.create_time >= start, MonitorParam.create_time <= end, MonitorParam.monitor_no == "8dfeaf752b4d40b4a23819478c90f9ae")).order_by(
+        result = MonitorParam.query.filter(and_(MonitorParam.create_time >= start, MonitorParam.create_time <= end,
+                                                MonitorParam.monitor_no == "8dfeaf752b4d40b4a23819478c90f9ae")).order_by(
             MonitorParam.create_time.desc()).all()
-        result2 = MonitorParam.query.filter(and_(MonitorParam.create_time >= start, MonitorParam.create_time <= end, MonitorParam.monitor_no == "80280c443ed84233bb9acbbfd7a59ed4")).order_by(
+        result2 = MonitorParam.query.filter(and_(MonitorParam.create_time >= start, MonitorParam.create_time <= end,
+                                                 MonitorParam.monitor_no == "80280c443ed84233bb9acbbfd7a59ed4")).order_by(
             MonitorParam.create_time.desc()).all()
         # print(result)
         data = []
