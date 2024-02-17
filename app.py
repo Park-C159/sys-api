@@ -1,5 +1,10 @@
 from sqlalchemy import and_, extract, desc, asc
 from sqlalchemy.inspection import inspect
+import random
+import threading
+from datetime import datetime
+
+import time
 
 from model import sqlutl
 
@@ -9,7 +14,8 @@ from flask_sqlalchemy import SQLAlchemy
 
 from config import SQLALCHEMY_DATABASE_URI, SQLALCHEMY_BINDS
 
-# from Data import *
+from model.message import IdentifyCode
+# from model.utils import *
 
 errObj = {
     'code': 500,
@@ -229,9 +235,6 @@ class Manage(db.Model):
         }
 
 
-from datetime import datetime, timedelta
-
-
 def generate_table_names(start_date, end_date):
     # 解析输入日期
     start = datetime.strptime(start_date, "%Y-%m-%d")
@@ -246,9 +249,6 @@ def generate_table_names(start_date, end_date):
         current += timedelta(days=1)  # 增加一天
 
     return table_names
-
-
-from sqlalchemy.sql import text
 
 
 def query_to_dict(query_result):
@@ -267,8 +267,58 @@ def query_to_dict(query_result):
             data_dict[column].append(value)
 
     return data_dict
+def getLatestData():
+    num1 = random.uniform(0, 40)
+    num2 = random.uniform(0.5, 1)
+    num3 = random.uniform(0, 10000)
+
+    return num1, num2, num3
+
+def isWarning(app):
+    with app.app_context():
+
+        while True:
+            temperature, humidity, light = getLatestData()
+            temperatureInfo = humidityInfo = lightInfo = None
+
+            if temperature < 5:
+                temperatureInfo = "温度过低"
+                save_warning(temperatureInfo)
+            elif temperature > 30:
+                temperatureInfo = "温度过高"
+                save_warning(temperatureInfo)
+
+            if humidity<0.6:
+                humidityInfo = "湿度过低"
+                save_warning(humidityInfo)
+            elif humidity > 0.9:
+                humidityInfo = "湿度过高"
+                save_warning(humidityInfo)
+
+            if light < 3000:
+                lightInfo = "光照不足"
+                save_warning(lightInfo)
+            elif light > 9000:
+                lightInfo = "光照过高"
+                save_warning(lightInfo)
+
+            # 打印警告信息，如果某个指标正常则不打印
+            warnings = [info for info in [temperatureInfo, humidityInfo, lightInfo] if info is not None]
+            # print(", ".join(warnings) if warnings else "所有指标正常")
+            if warnings:
+                warning_content = ", ".join(warnings)
+                print(warning_content)
+            else:
+                print("所有指标正常")
+            time.sleep(60)
 
 
+
+def save_warning(content):
+    current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    new_warning = Warn(content=content, wtime=current_time)
+    db.session.add(new_warning)
+    db.session.commit()
 @app.route('/data', methods=['GET', 'POST'])
 def data():
     if request.method == "GET":
@@ -505,6 +555,38 @@ def login():
         res = "get/login"
     return res
 
+@app.route('/sendmessage', methods=['GET', 'POST'])
+def sendMessage():
+    if request.method == 'POST':
+        params = request.json
+        phone = params.get("phone")
+        random_num = random.randint(1000,9999)
+        # 转化为字符串
+        verification_code = str(random_num)
+        success = IdentifyCode.send_verification_code(phone, verification_code)
+
+        if success:
+            print('发送成功' if success else '发送失败')
+            res = {
+                "code": 200,
+                "msg": "发送成功",
+                "data": verification_code
+            }
+    elif request.method == 'GET':
+        # 生成四位数随机数
+        random_number = random.randint(1000, 9999)
+
+        # 转化为字符串
+        verification_code = str(random_number)
+        success = IdentifyCode.send_verification_code("15212371894",verification_code)
+        if success:
+            print('发送成功' if success else '发送失败')
+            res = {
+                "code": 200,
+                "msg": "发送成功",
+                "data": verification_code
+            }
+    return res
 
 @app.route('/environment', methods=['GET', 'POST'])
 def environment():
@@ -603,9 +685,13 @@ def days():
 
     return res
 
-
 @app.route('/warning', methods=['GET', 'POST'])
 def warning():
+    if request.method == 'GET':
+        temperature, humidity, light = getLatestData()
+        print(temperature, humidity, light)
+
+
     result = Warn.query.order_by(Warn.wid.desc()).all()
     data = []
     for row in result:
@@ -618,8 +704,6 @@ def warning():
     }
 
     return res
-
-
 @app.route('/manage', methods=['GET', 'POST'])
 @app.route('/manage/<int:id>', methods=["PUT", "DELETE"])
 def manage(id=None):
@@ -633,7 +717,7 @@ def manage(id=None):
 
             # 格式化mtime字段
             if 'mtime' in row_data and isinstance(row_data['mtime'], datetime):
-                row_data['mtime'] = row_data['mtime'].strftime('%y-%m-%d %H:%M:%S')
+                row_data['mtime'] = row_data['mtime'].strftime('%Y-%m-%d %H:%M:%S')
 
             # 转换mclass字段
             if 'mclass' in row_data:
@@ -799,7 +883,11 @@ def queryInfo():
 
 
 if __name__ == '__main__':
-    print("start.....................")
+    print("start..............................................")
+
+
+    thread = threading.Thread(target=isWarning, args=(app,))
+    thread.start()
+    app.run(host='0.0.0.0', port=3000, threaded=True)
     # run()
     # app.run(host='0.0.0.0', port=3000, debug=True, threaded=True)
-    app.run(host='0.0.0.0', port=3000, threaded=True)

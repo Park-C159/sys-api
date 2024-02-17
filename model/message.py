@@ -6,7 +6,7 @@ from alibabacloud_tea_openapi import models as open_api_models
 from alibabacloud_dysmsapi20170525 import models as dysmsapi_20170525_models
 from alibabacloud_tea_util import models as util_models
 
-class Sample:
+class IdentifyCode:
     def __init__(self):
         pass
 
@@ -27,17 +27,17 @@ class Sample:
         return Dysmsapi20170525Client(config)
 
     @staticmethod
-    def send_verification_code(verification_code: str) -> bool:
+    def send_verification_code(phone_number: str, verification_code: str) -> bool:
         """
         发送验证码
         @param verification_code: 验证码
         @return: 是否发送成功
         """
-        client = Sample.create_client()
+        client = IdentifyCode.create_client()
         send_sms_request = dysmsapi_20170525_models.SendSmsRequest(
             sign_name='温室平台',
             template_code='SMS_464985173',
-            phone_numbers='15212371894',  # TODO: Replace with the actual recipient's phone number
+            phone_numbers=phone_number,  # TODO: Replace with the actual recipient's phone number
             template_param=f'{{"code":"{verification_code}"}}'
         )
         runtime = util_models.RuntimeOptions()
@@ -48,9 +48,3 @@ class Sample:
         except Exception as e:
             print(e.message)
             return False
-
-# 使用示例
-if __name__ == '__main__':
-    verification_code = '1234'  # 示例验证码
-    success = Sample.send_verification_code(verification_code)
-    print('发送成功' if success else '发送失败')
