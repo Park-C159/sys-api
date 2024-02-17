@@ -319,7 +319,7 @@ def save_warning(content):
     new_warning = Warn(content=content, wtime=current_time)
     db.session.add(new_warning)
     db.session.commit()
-@app.route('/data', methods=['GET', 'POST'])
+@app.route('/api/data', methods=['GET', 'POST'])
 def data():
     if request.method == "GET":
         result = FittingData.query.order_by(asc(FittingData.datetime)).all()
@@ -398,7 +398,7 @@ def run():
     return jsonify(data)
 
 
-@app.route('/mod', methods=['GET', 'POST'])
+@app.route('/api/mod', methods=['GET', 'POST'])
 def mod():
     if request.method == 'POST':
         res = {}
@@ -438,7 +438,7 @@ def mod():
     return make_response(res)
 
 
-@app.route('/regist', methods=['GET', 'POST'])
+@app.route('/api/regist', methods=['GET', 'POST'])
 def reg():
     if request.method == 'POST':
         res = {}
@@ -495,7 +495,7 @@ def reg():
     return make_response(res)
 
 
-@app.route('/find', methods=['GET', 'POST'])
+@app.route('/api/find', methods=['GET', 'POST'])
 def find():
     if request.method == 'POST':
         res = {}
@@ -520,7 +520,7 @@ def find():
     return make_response(res)
 
 
-@app.route('/login', methods=['GET', 'POST'])
+@app.route('/api/login', methods=['GET', 'POST'])
 def login():
     if request.method == 'POST':
         res = {}
@@ -555,7 +555,7 @@ def login():
         res = "get/login"
     return res
 
-@app.route('/sendmessage', methods=['GET', 'POST'])
+@app.route('/api/sendmessage', methods=['GET', 'POST'])
 def sendMessage():
     if request.method == 'POST':
         params = request.json
@@ -588,7 +588,7 @@ def sendMessage():
             }
     return res
 
-@app.route('/environment', methods=['GET', 'POST'])
+@app.route('/api/environment', methods=['GET', 'POST'])
 def environment():
     try:
         result = MonitorParam.query.filter(MonitorParam.monitor_no == "8dfeaf752b4d40b4a23819478c90f9ae").order_by(
@@ -609,7 +609,7 @@ def environment():
     return res
 
 
-@app.route('/hours', methods=['GET', 'POST'])
+@app.route('/api/hours', methods=['GET', 'POST'])
 def hours():
     result = MonitorParam.query.filter(MonitorParam.monitor_no == "8dfeaf752b4d40b4a23819478c90f9ae",
                                        extract('minute', MonitorParam.create_time) == 0).order_by(
@@ -633,7 +633,7 @@ def hours():
     return res
 
 
-@app.route('/minutes', methods=['GET', 'POST'])
+@app.route('/api/minutes', methods=['GET', 'POST'])
 def minutes():
     # result = MonitorParam.query.all()
     # print(result)
@@ -660,7 +660,7 @@ def minutes():
     return res
 
 
-@app.route('/days', methods=['GET', 'POST'])
+@app.route('/api/days', methods=['GET', 'POST'])
 def days():
     result = MonitorParam.query.filter(MonitorParam.monitor_no == "8dfeaf752b4d40b4a23819478c90f9ae",
                                        extract('hour', MonitorParam.create_time) == 12,
@@ -685,7 +685,7 @@ def days():
 
     return res
 
-@app.route('/warning', methods=['GET', 'POST'])
+@app.route('/api/warning', methods=['GET', 'POST'])
 def warning():
     if request.method == 'GET':
         temperature, humidity, light = getLatestData()
@@ -704,8 +704,8 @@ def warning():
     }
 
     return res
-@app.route('/manage', methods=['GET', 'POST'])
-@app.route('/manage/<int:id>', methods=["PUT", "DELETE"])
+@app.route('/api/manage', methods=['GET', 'POST'])
+@app.route('/api/manage/<int:id>', methods=["PUT", "DELETE"])
 def manage(id=None):
     if request.method == "GET":
         result = Manage.query.order_by(Manage.mid.desc()).all()
@@ -787,7 +787,7 @@ def manage(id=None):
     return res
 
 
-@app.route('/upload', methods=['GET', 'POST'])
+@app.route('/api/upload', methods=['GET', 'POST'])
 def upload():
     if request.method == 'POST':
         r = request.json
@@ -809,7 +809,7 @@ def upload():
     return make_response(res)
 
 
-@app.route('/delete', methods=['GET', 'POST'])
+@app.route('/api/delete', methods=['GET', 'POST'])
 def deleteManage():
     if request.method == 'POST':
         r = request.json
@@ -839,7 +839,7 @@ def deleteManage():
     return make_response(res)
 
 
-@app.route('/query', methods=['GET', 'POST'])
+@app.route('/api/query', methods=['GET', 'POST'])
 def queryInfo():
     if request.method == 'POST':
         r = request.json
