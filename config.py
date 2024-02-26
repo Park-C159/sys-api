@@ -1,4 +1,5 @@
 SQLALCHEMY_DATABASE_URI = 'mysql://root:123456@127.0.0.1:3307/sysplus' # 默认数据库（主数据库）
+UPLOAD_FOLDER = 'uploads'
 
 # 需要绑定的多个数据库
 SQLALCHEMY_BINDS = {

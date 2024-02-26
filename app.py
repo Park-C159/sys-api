@@ -8,13 +8,14 @@ import time
 
 from model import sqlutl
 
-from flask import Flask, make_response, request, jsonify
+from flask import Flask, make_response, request, jsonify, url_for, redirect, render_template
 from flask_cors import CORS  # 引用CORS，后期需要VUE支持跨域访问会用到
 from flask_sqlalchemy import SQLAlchemy
 
 from config import SQLALCHEMY_DATABASE_URI, SQLALCHEMY_BINDS
 
 from model.message import IdentifyCode
+
 # from model.utils import *
 
 errObj = {
@@ -23,7 +24,7 @@ errObj = {
 }
 
 # Flask类只有一个必须指定的参数，即程序主模块或者包的名字，__name__是系统变量，该变量指的是本py文件的文件名
-app = Flask(__name__)
+app = Flask(__name__, static_folder='uploads')
 # resources全局配置允许跨域的API接口，我们这边为了学习，配置所有，详细学习请百度搜索文档
 CORS(app, resources=r'/*')
 
@@ -111,13 +112,14 @@ class User(db.Model):
     birthday = db.Column(db.Date)
     umail = db.Column(db.String(20))
     uidcard = db.Column(db.String(20))
+    unickname = db.Column(db.String(255))
+    uinfo = db.Column(db.Text)
 
     def regist(self):
         return {
             "uname": self.uname,
             "uphone": self.uphone,
             "uidcard": self.uidcard
-
         }
 
     def jsonformat(self):
@@ -130,8 +132,9 @@ class User(db.Model):
             "sex": self.sex,
             "birthday": self.birthday,
             "umail": self.umail,
-            "uidcard": self.uidcard
-
+            "uidcard": self.uidcard,
+            "unickname": self.unickname,
+            "uinfo": self.uinfo
         }
 
 
@@ -267,12 +270,15 @@ def query_to_dict(query_result):
             data_dict[column].append(value)
 
     return data_dict
+
+
 def getLatestData():
     num1 = random.uniform(0, 40)
     num2 = random.uniform(0.5, 1)
     num3 = random.uniform(0, 10000)
 
     return num1, num2, num3
+
 
 def isWarning(app):
     with app.app_context():
@@ -288,7 +294,7 @@ def isWarning(app):
                 temperatureInfo = "温度过高"
                 save_warning(temperatureInfo)
 
-            if humidity<0.6:
+            if humidity < 0.6:
                 humidityInfo = "湿度过低"
                 save_warning(humidityInfo)
             elif humidity > 0.9:
@@ -313,12 +319,13 @@ def isWarning(app):
             time.sleep(60)
 
 
-
 def save_warning(content):
     current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     new_warning = Warn(content=content, wtime=current_time)
     db.session.add(new_warning)
     db.session.commit()
+
+
 @app.route('/api/data', methods=['GET', 'POST'])
 def data():
     if request.method == "GET":
@@ -519,7 +526,6 @@ def find():
         res = "get/resgist"
     return make_response(res)
 
-
 @app.route('/api/login', methods=['GET', 'POST'])
 def login():
     if request.method == 'POST':
@@ -555,12 +561,13 @@ def login():
         res = "get/login"
     return res
 
+
 @app.route('/api/sendmessage', methods=['GET', 'POST'])
 def sendMessage():
     if request.method == 'POST':
         params = request.json
         phone = params.get("phone")
-        random_num = random.randint(1000,9999)
+        random_num = random.randint(1000, 9999)
         # 转化为字符串
         verification_code = str(random_num)
         success = IdentifyCode.send_verification_code(phone, verification_code)
@@ -578,7 +585,7 @@ def sendMessage():
 
         # 转化为字符串
         verification_code = str(random_number)
-        success = IdentifyCode.send_verification_code("15212371894",verification_code)
+        success = IdentifyCode.send_verification_code("15212371894", verification_code)
         if success:
             print('发送成功' if success else '发送失败')
             res = {
@@ -587,6 +594,7 @@ def sendMessage():
                 "data": verification_code
             }
     return res
+
 
 @app.route('/api/environment', methods=['GET', 'POST'])
 def environment():
@@ -685,12 +693,12 @@ def days():
 
     return res
 
+
 @app.route('/api/warning', methods=['GET', 'POST'])
 def warning():
     if request.method == 'GET':
         temperature, humidity, light = getLatestData()
         print(temperature, humidity, light)
-
 
     result = Warn.query.order_by(Warn.wid.desc()).all()
     data = []
@@ -704,6 +712,8 @@ def warning():
     }
 
     return res
+
+
 @app.route('/api/manage', methods=['GET', 'POST'])
 @app.route('/api/manage/<int:id>', methods=["PUT", "DELETE"])
 def manage(id=None):
@@ -882,9 +892,130 @@ def queryInfo():
     return make_response(res)
 
 
+ALLOWED_EXTENSIONS = {'txt', 'pdf', 'png', 'jpg', 'jpeg', 'gif'}
+
+
+def allowed_file(filename):
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+
+
+from werkzeug.utils import secure_filename
+import os
+
+UPLOAD_FOLDER = 'uploads'
+
+
+@app.route('/api/uploadAvatar/<int:id>', methods=['POST'])
+def upload_file(id=None):
+    if 'file' not in request.files:
+        return redirect(request.url)
+    file = request.files['file']
+    if file.filename == '':
+        return redirect(request.url)
+    if file and allowed_file(file.filename):
+        filename = secure_filename(file.filename)
+        file.save(os.path.join(UPLOAD_FOLDER, filename))
+
+        # 构造用户头像的URL或相对路径
+        avatar_url = url_for('static', filename= filename, _external=True)
+
+        # 更新数据库中的用户uavatar字段
+        user_id = id  # 获取当前用户ID
+        user = User.query.filter_by(uid=user_id).first()
+
+        if user:
+            user.uavatar = avatar_url
+            db.session.commit()
+            return avatar_url
+        else:
+            return 'User not found', 404
+
+@app.route('/api/modpwd/<int:id>', methods=['PUT'])
+def mod_pwd(id=None):
+    if id is None:
+        res = {
+            "code": 400,
+            "msg": "需要指定ID"
+        }
+    else:
+        user = User.query.filter_by(uid=id).first()
+        if not user:
+            res = {
+                "code": 404,
+                "msg": "没有找到用户"
+            }
+        else:
+            data = request.json
+
+            if data.get('rawPwd')!='' and user.upwd != data.get('rawPwd'):
+                res={
+                    "code": 301,
+                    "msg": "原密码错误"
+                }
+            else:
+                user.upwd = data.get('pwd')
+                db.session.commit()
+
+                res = {
+                    "code": 200,
+                    "msg": "修改成功，请重新登陆。"
+                }
+
+    return res
+@app.route('/api/getUser/<int:id>', methods=['GET', 'PUT'])
+def get_user(id=None):
+    res = {}
+    if id is None:
+        res = {
+            "code": 400,
+            "msg": "需要指定ID"
+        }
+
+    else:
+        if request.method == "GET":
+            result = User.query.filter_by(uid=id).first()
+            if result is None:
+                res = {
+                    "code": 304,
+                    "msg": "没有找到指定用户"
+                }
+
+            else:
+                data = result.jsonformat()
+                res = {"code": 200, "data": data, "msg": "ok"}
+        elif request.method == "PUT":
+            user = User.query.filter_by(uid=id).first()
+            if not user:
+                res={
+                    "code":404,
+                    "msg": "没有找到用户"
+                }
+            else:
+                data = request.json
+
+                user.uname = data.get('uname', user.uname)
+                user.uphone = data.get('uphone', user.uphone)
+                user.umail = data.get('umail', user.umail)
+                user.uavatar = data.get('uavatar', user.uavatar)
+                user.unickname = data.get('unickname', user.unickname)
+                user.uinfo = data.get('uinfo', user.uinfo)
+                user.umail = data.get('umail', user.umail)
+
+                db.session.commit()
+
+                u = user.jsonformat()
+
+                res = {
+                    "code": 200,
+                    "data": u,
+                    "msg": "更新成功"
+                }
+
+    return res
+
+
 if __name__ == '__main__':
     print("start..............................................")
-
 
     thread = threading.Thread(target=isWarning, args=(app,))
     thread.start()
