@@ -202,17 +202,20 @@ class MonitorParam(db.Model):
 
 
 class Warn(db.Model):
-    # 使用默认数据库，不需要像下面指定__bind_key__
     __tablename__ = 'warning'  # 表名
 
     wid = db.Column(db.Integer, primary_key=True)
-    content = db.Column(db.String(100))
-    wtime = db.Column(db.DateTime)
+    content = db.Column(db.String(127), default=None)
+    value = db.Column(db.Float, default=None)
+    rx = db.Column(db.String(127), default=None)
+    wtime = db.Column(db.DateTime, default=None)
 
     def jsonformat(self):
         return {
             "id": self.wid,
             "content": self.content,
+            "value": self.value,
+            "rx": self.rx,
             "wtime": self.wtime
 
         }
@@ -273,55 +276,74 @@ def query_to_dict(query_result):
 
 
 def getLatestData():
-    num1 = random.uniform(0, 40)
-    num2 = random.uniform(0.5, 1)
-    num3 = random.uniform(0, 10000)
+    num1 = random.uniform(19, 36)
+    num2 = random.uniform(0.34, 0.56)
+    num3 = random.uniform(29000, 50101)
 
     return num1, num2, num3
 
 
-def isWarning(app):
-    with app.app_context():
+UP_LIMIT_TEMPERATURE = 35
+DOWN_LIMIT_TEMPERATURE = 20
 
-        while True:
-            temperature, humidity, light = getLatestData()
-            temperatureInfo = humidityInfo = lightInfo = None
+UP_LIMIT_HUMIDITY = 0.55
+DOWN_LIMIT_HUMIDITY = 0.35
 
-            if temperature < 5:
-                temperatureInfo = "温度过低"
-                save_warning(temperatureInfo)
-            elif temperature > 30:
-                temperatureInfo = "温度过高"
-                save_warning(temperatureInfo)
-
-            if humidity < 0.6:
-                humidityInfo = "湿度过低"
-                save_warning(humidityInfo)
-            elif humidity > 0.9:
-                humidityInfo = "湿度过高"
-                save_warning(humidityInfo)
-
-            if light < 3000:
-                lightInfo = "光照不足"
-                save_warning(lightInfo)
-            elif light > 9000:
-                lightInfo = "光照过高"
-                save_warning(lightInfo)
-
-            # 打印警告信息，如果某个指标正常则不打印
-            warnings = [info for info in [temperatureInfo, humidityInfo, lightInfo] if info is not None]
-            # print(", ".join(warnings) if warnings else "所有指标正常")
-            if warnings:
-                warning_content = ", ".join(warnings)
-                print(warning_content)
-            else:
-                print("所有指标正常")
-            time.sleep(60)
+UP_LIMIT_LIGHT = 50000
+DOWN_LIMIT_LIGHT = 30000
 
 
-def save_warning(content):
+def isWarning():
+    # with app.app_context():
+
+        # while True:
+    temperature, humidity, light = getLatestData()
+    temperatureInfo = humidityInfo = lightInfo = None
+
+    if temperature < DOWN_LIMIT_TEMPERATURE:
+        temperatureInfo = "温度报警"
+        rx = "-{:.2f}℃".format(DOWN_LIMIT_TEMPERATURE - temperature)
+        save_warning(temperatureInfo, temperature, rx)
+    elif temperature > UP_LIMIT_TEMPERATURE:
+        temperatureInfo = "温度报警"
+        rx = "+{:.2f}℃".format(temperature - UP_LIMIT_TEMPERATURE)
+        save_warning(temperatureInfo, temperature, rx)
+
+    if humidity < DOWN_LIMIT_HUMIDITY:
+        humidityInfo = "湿度报警"
+        rx = "+{:.2f}%RH".format((DOWN_LIMIT_HUMIDITY - humidity) * 100)
+        save_warning(humidityInfo, humidity, rx)
+    elif humidity > UP_LIMIT_HUMIDITY:
+        humidityInfo = "湿度报警"
+        value = humidity
+        rx = "+{:.2f}%RH".format((value - UP_LIMIT_HUMIDITY) * 100)
+        save_warning(humidityInfo, value, rx)
+
+    if light < DOWN_LIMIT_LIGHT:
+        lightInfo = "光照报警"
+        rx = "-{:.2f}lx".format(DOWN_LIMIT_LIGHT - light)
+        save_warning(lightInfo, light, rx)
+    elif light > UP_LIMIT_LIGHT:
+        lightInfo = "光照报警"
+        rx = "+{:.2f}lx".format(light - UP_LIMIT_LIGHT)
+        save_warning(lightInfo, light, rx)
+
+    # 打印警告信息，如果某个指标正常则不打印
+    warnings = [info for info in [temperatureInfo, humidityInfo, lightInfo] if info is not None]
+    # print(", ".join(warnings) if warnings else "所有指标正常")
+    if warnings:
+        warning_content = ", ".join(warnings)
+        print(warning_content)
+        return True
+    else:
+        print("所有指标正常")
+        return False
+            # time.sleep(60)
+
+
+def save_warning(content, value=0, rx=""):
     current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    new_warning = Warn(content=content, wtime=current_time)
+    new_warning = Warn(content=content, wtime=current_time, value=value, rx=rx)
     db.session.add(new_warning)
     db.session.commit()
 
@@ -526,6 +548,7 @@ def find():
         res = "get/resgist"
     return make_response(res)
 
+
 @app.route('/api/login', methods=['GET', 'POST'])
 def login():
     if request.method == 'POST':
@@ -697,19 +720,29 @@ def days():
 @app.route('/api/warning', methods=['GET', 'POST'])
 def warning():
     if request.method == 'GET':
-        temperature, humidity, light = getLatestData()
-        print(temperature, humidity, light)
+        # thread = threading.Thread(target=isWarning, args=(app,))
+        # thread.start()
+        isWarn = isWarning()
+        # temperature, humidity, light = getLatestData()
+        # print(temperature, humidity, light)
 
-    result = Warn.query.order_by(Warn.wid.desc()).all()
-    data = []
-    for row in result:
-        data.append(row.jsonformat())
+        result = Warn.query.order_by(Warn.wid.desc()).limit(100).all()
+        data = []
+        for row in result:
+            # 将时间戳转换为datetime对象
+            # wtime_datetime = datetime.fromtimestamp(row.wtime)
+            # 将datetime对象格式化为字符串
+            wtime_str = row.wtime.strftime('%Y-%m-%d %H:%M:%S')
+            row_dict = row.jsonformat()
+            row_dict["wtime"] = wtime_str
+            data.append(row_dict)
 
-    res = {
-        "code": 200,
-        "msg": "OK",
-        "data": data
-    }
+        res = {
+            "code": 200,
+            "msg": "OK",
+            "data": data,
+            "isWarning": isWarn
+        }
 
     return res
 
@@ -917,7 +950,8 @@ def upload_file(id=None):
         file.save(os.path.join(UPLOAD_FOLDER, filename))
 
         # 构造用户头像的URL或相对路径
-        avatar_url = url_for('static', filename= filename, _external=True)
+        avatar_url = url_for('static', filename=filename, _external=True)
+        print(avatar_url)
 
         # 更新数据库中的用户uavatar字段
         user_id = id  # 获取当前用户ID
@@ -929,6 +963,7 @@ def upload_file(id=None):
             return avatar_url
         else:
             return 'User not found', 404
+
 
 @app.route('/api/modpwd/<int:id>', methods=['PUT'])
 def mod_pwd(id=None):
@@ -947,8 +982,8 @@ def mod_pwd(id=None):
         else:
             data = request.json
 
-            if data.get('rawPwd')!='' and user.upwd != data.get('rawPwd'):
-                res={
+            if data.get('rawPwd') != '' and user.upwd != data.get('rawPwd'):
+                res = {
                     "code": 301,
                     "msg": "原密码错误"
                 }
@@ -962,6 +997,8 @@ def mod_pwd(id=None):
                 }
 
     return res
+
+
 @app.route('/api/getUser/<int:id>', methods=['GET', 'PUT'])
 def get_user(id=None):
     res = {}
@@ -986,8 +1023,8 @@ def get_user(id=None):
         elif request.method == "PUT":
             user = User.query.filter_by(uid=id).first()
             if not user:
-                res={
-                    "code":404,
+                res = {
+                    "code": 404,
                     "msg": "没有找到用户"
                 }
             else:
@@ -1017,8 +1054,7 @@ def get_user(id=None):
 if __name__ == '__main__':
     print("start..............................................")
 
-    thread = threading.Thread(target=isWarning, args=(app,))
-    thread.start()
+
     app.run(host='0.0.0.0', port=3000, threaded=True)
     # run()
     # app.run(host='0.0.0.0', port=3000, debug=True, threaded=True)
