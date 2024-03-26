@@ -1,0 +1,7 @@
+.idea
+__pycache__
+
+model/temperature/
+model/pl/
+model/byc/
+model/airconditioner/
